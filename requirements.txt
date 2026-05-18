@@ -1,0 +1,8 @@
+fastapi
+mlflow
+xgboost
+pandas
+pytest
+httpx
+boto3
+

@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: postgres_data
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+  mlflow:
+    build: ./mlflow
+    container_name: mlflow
+    depends_on:
+      postgres: 
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
+      --default-artifact-root s3://mlops-artifacts-aravindh-ml/artifacts
+      --host 0.0.0.0
+      --port 5000
+      --allowed-hosts '*'
+    environment:
+      DB_URI: postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
+      ARTIFACT_URI: s3://mlops-artifacts-aravindh-ml/artifacts
+    volumes:
+      - ~/.aws:/root/.aws:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000').raise_for_status()"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+  app:
+    build: .
+    container_name: app
+    depends_on:
+      mlflow: 
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ENVIRONMENT: Production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/').raise_for_status()"]
+      interval: 20s
+      retries: 10
+      start_period: 60s
+    volumes:
+      - ~/.aws:/root/.aws:ro
+  training:
+    build: ./training
+    container_name: train_pipeline
+    depends_on:
+      mlflow:
+        condition: service_healthydcd 
+    volumes:
+      - ~/.aws:/root/.aws:ro
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ENVIRONMENT: Production
+      DATA_PATH: s3://mlops-artifacts-aravindh-ml/data/hour.csv
+    command: tail -f /dev/null
+
+volumes:
+  postgres_data:
+  
+
+
+  

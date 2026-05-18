@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+venv/
+
+.aws
+
+# MLflow (VERY IMPORTANT)
+
+
+# OS
+.DS_Store
+Thumbs.db
+
+.vscode
