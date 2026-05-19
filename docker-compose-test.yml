@@ -47,7 +47,7 @@ services:
       mc mb local/mlops-artifacts-aravindh-ml --ignore-existing
       '
   init_data:
-    image: python:3.8-slim
+    build: ./init_data
     container_name: init_data
     depends_on:
       create_bucket:
@@ -59,7 +59,6 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: >
       sh -c "
-      pip install boto3 &&
       python -c 'import boto3; s3=boto3.client(\"s3\", endpoint_url=\"http://minio:9000\", aws_access_key_id=\"minioadmin\", aws_secret_access_key=\"minioadmin\"); s3.upload_file(\"/data/hour.csv\", \"mlops-artifacts-aravindh-ml\", \"Data/hour.csv\")'
       "
   mlflow:
