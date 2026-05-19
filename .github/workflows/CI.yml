@@ -25,3 +25,27 @@ jobs:
       - name: Show container status
         if: always()
         run: docker compose -f docker-compose-test.yml ps -a
+
+      - name: Show exited containers
+        if: always()
+        run: docker ps -a
+      
+      - name: Show init_data logs
+        if: always()
+        run: docker logs init_data
+      
+      - name: Show mlflow logs
+        if: always()
+        run: docker logs mlflow
+
+      - name: Show training logs
+        if: always()
+        run: docker logs train_pipeline
+      
+      - name: Show app logs
+        if: always()
+        run: docker logs app
+
+      - name: Show tests logs
+        if: always()
+        run: docker logs tests
