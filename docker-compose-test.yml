@@ -73,21 +73,12 @@ services:
     ports:
       - "5000:5000"
     command: >
-      sh -c "
-      for i in $(seq 1 30); do
-        pg_isready -h postgres -U mlflow -d postgres_data && break
-
-        echo 'Waiting for postgres...'
-        sleep 2
-      done &&
-      
       mlflow server
       --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
       --default-artifact-root s3://mlops-artifacts-aravindh-ml/artifacts
       --host 0.0.0.0
       --port 5000
       --allowed-hosts '*'
-      "
     environment:
       DB_URI: postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
       ARTIFACT_URI: s3://mlops-artifacts-aravindh-ml/artifacts
@@ -137,8 +128,7 @@ services:
       sh -c "
       for i in $(seq 1 30); do
         python -c '
-      import requests
-      requests.get(\"http://mlflow:5000\").raise_for_status()
+      import requests; requests.get(\"http://mlflow:5000\").raise_for_status()
       ' && break
 
           echo 'Waiting for MLflow...'
@@ -165,15 +155,14 @@ services:
       app:
         condition: service_healthy
     volumes:
-      - ./tests/test_integrations.py:/tests/test_integration.py
+      - ./tests:/tests
     command: >
       bash -c "
       pip install pytest requests &&
       
       for i in $(seq 1 30); do
         python -c '
-      import requests
-      requests.get(\"http://app:8000\").raise_for_status()
+      import requests; requests.get(\"http://app:8000\").raise_for_status()
       ' && break
 
           echo 'Waiting for app...'

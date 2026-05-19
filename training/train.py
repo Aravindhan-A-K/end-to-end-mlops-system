@@ -12,6 +12,7 @@ from xgboost import XGBRegressor
 from sklearn.metrics import root_mean_squared_error, accuracy_score
 
 import mlflow
+from mlflow.tracking import MlflowClient
 
 column_names = [
     "instant",
@@ -113,7 +114,7 @@ def generate_schema(df: pd.DataFrame):
 schema = generate_schema(x_train)
 with open("schema.json", "w") as f:
     json.dump(schema, f, indent=4)
-
+client = MlflowClient()
 with mlflow.start_run():
 
     model = XGBRegressor(
@@ -151,6 +152,20 @@ with mlflow.start_run():
 
     mlflow.log_metric("rmse", root_mean_squared_error(y_test, y_pred))
     mlflow.log_artifact("schema.json", artifact_path="model")
-    mlflow.sklearn.log_model(model, artifact_path="model")
+    model_info = mlflow.sklearn.log_model(
+    sk_model=model,
+    artifact_path="model",
+    registered_model_name="First model"
+)
+latest_version = client.get_latest_versions(
+    "First model",
+    stages=["None"]
+)[0]
+
+client.transition_model_version_stage(
+    name="First model",
+    version=latest_version.version,
+    stage="Production"
+)
 
 
