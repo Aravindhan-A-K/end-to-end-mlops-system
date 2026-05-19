@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres_data"]
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d postgres_data"]
       interval: 1m30s
       timeout: 30s
       retries: 5
@@ -96,6 +96,8 @@ services:
     depends_on:
       mlflow: 
         condition: service_healthy
+      training:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     environment:
@@ -122,6 +124,11 @@ services:
         condition: service_completed_successfully
       init_data:
         condition: service_completed_successfully
+    command: >
+      sh -c "
+      sleep 15 &&
+      python train.py
+      "
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       ENVIRONMENT: Production
@@ -130,7 +137,6 @@ services:
       DATA_PATH: s3://mlops-artifacts-aravindh-ml/data/hour.csv
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       S3_ENDPOINT_URL: http://minio:9000
-    command: tail -f /dev/null
   test:
     image: python:3.12-slim
     container_name: tests

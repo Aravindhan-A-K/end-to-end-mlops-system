@@ -64,14 +64,18 @@ services:
     container_name: train_pipeline
     depends_on:
       mlflow:
-        condition: service_healthydcd 
+        condition: service_healthydcd
+    command: >
+      sh -c "
+      sleep 15 &&
+      python train.py
+      "
     volumes:
       - ~/.aws:/root/.aws:ro
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       ENVIRONMENT: Production
       DATA_PATH: s3://mlops-artifacts-aravindh-ml/data/hour.csv
-    command: tail -f /dev/null
 
 volumes:
   postgres_data:
