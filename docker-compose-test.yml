@@ -26,7 +26,7 @@ services:
       - "9001:9001"
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -41,7 +41,10 @@ services:
         condition: service_healthy
     entrypoint: /bin/sh
     command: -c "
-      sleep 10;
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+      echo 'Waiting for MinIO...'
+      sleep 2
+     done &&
       mc alias set local http://minio:9000 minioadmin minioadmin;
       mc mb local/mlops-artifacts-aravindh-ml --ignore-existing;
       "
@@ -60,8 +63,14 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: >
       sh -c "
-      sleep 15 &&
       pip install boto3 &&
+      until python -c '
+      import socket
+      socket.gethostbyname(\"minio\")
+      '; do
+          echo 'Waiting for MinIO DNS...'
+          sleep 2
+        done &&
       python -c 'import boto3; s3=boto3.client(\"s3\", endpoint_url=\"http://minio:9000\", aws_access_key_id=\"minioadmin\", aws_secret_access_key=\"minioadmin\"); s3.upload_file(\"/data/hour.csv\", \"mlops-artifacts-aravindh-ml\", \"Data/hour.csv\")'
       "
   mlflow:
@@ -77,12 +86,17 @@ services:
     ports:
       - "5000:5000"
     command: >
+      sh -c "until pg_isready -h postgres -U mlflow -d postgres_data; do
+      echo 'Waiting for postgres...'
+      sleep 2
+      done &&
       mlflow server
       --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
       --default-artifact-root s3://mlops-artifacts-aravindh-ml/artifacts
       --host 0.0.0.0
       --port 5000
       --allowed-hosts '*'
+      "
     environment:
       DB_URI: postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
       ARTIFACT_URI: s3://mlops-artifacts-aravindh-ml/artifacts
@@ -131,7 +145,13 @@ services:
         condition: service_completed_successfully
     command: >
       sh -c "
-      sleep 15 &&
+      until python -c '
+      import requests
+      requests.get(\"http://mlflow:5000\").raise_for_status()
+      '; do
+          echo 'Waiting for MLflow...'
+          sleep 2
+        done &&
       python train.py
       "
     environment:
@@ -154,7 +174,19 @@ services:
     volumes:
       - ./tests/test_integrations.py:/tests/test_integration.py
     command: >
-      bash -c "pip install pytest requests && pytest /tests/test_integration.py -v"
+      bash -c "
+      pip install pytest requests &&
+      
+      until python -c '
+      import requests
+      requests.get(\"http://app:8000\").raise_for_status()
+      '; do
+          echo 'Waiting for app...'
+          sleep 2
+        done &&
+        
+        pytest /tests/test_integration.py -v
+        "
   
 
 volumes:
