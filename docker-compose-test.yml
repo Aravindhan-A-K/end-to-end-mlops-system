@@ -11,10 +11,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mlflow -d postgres_data"]
-      interval: 1m30s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -32,7 +32,7 @@ services:
     container_name: create_bucket
     depends_on:
       minio:
-        condition: service_completed_successfully
+        condition: service_started
     entrypoint: /bin/sh
     command: -c "
       until mc alias set local http://minio:9000 minioadmin minioadmin; do
@@ -46,8 +46,6 @@ services:
     image: python:3.8-slim
     container_name: init_data
     depends_on:
-      minio:
-        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
     volumes:
@@ -58,13 +56,6 @@ services:
     command: >
       sh -c "
       pip install boto3 &&
-      until python -c '
-      import socket
-      socket.gethostbyname(\"minio\")
-      '; do
-          echo 'Waiting for MinIO DNS...'
-          sleep 2
-        done &&
       python -c 'import boto3; s3=boto3.client(\"s3\", endpoint_url=\"http://minio:9000\", aws_access_key_id=\"minioadmin\", aws_secret_access_key=\"minioadmin\"); s3.upload_file(\"/data/hour.csv\", \"mlops-artifacts-aravindh-ml\", \"Data/hour.csv\")'
       "
   mlflow:
@@ -73,17 +64,19 @@ services:
     depends_on:
       postgres: 
         condition: service_healthy
-      minio:
-        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
     ports:
       - "5000:5000"
     command: >
-      sh -c "until pg_isready -h postgres -U mlflow -d postgres_data; do
-      echo 'Waiting for postgres...'
-      sleep 2
+      sh -c "
+      for i in $(seq 1 30); do
+        pg_isready -h postgres -U mlflow -d postgres_data && break
+
+        echo 'Waiting for postgres...'
+        sleep 2
       done &&
+      
       mlflow server
       --backend-store-uri postgresql+psycopg2://mlflow:mlflow@postgres:5432/postgres_data
       --default-artifact-root s3://mlops-artifacts-aravindh-ml/artifacts
@@ -99,10 +92,10 @@ services:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000').raise_for_status()"]
-      interval: 1m30s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
   app:
     build: .
     container_name: app
@@ -121,9 +114,10 @@ services:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/').raise_for_status()"]
-      interval: 20s
+      interval: 5s
+      timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 20s
     
   training:
     build: ./training
@@ -131,23 +125,24 @@ services:
     depends_on:
       mlflow:
         condition: service_healthy
-      minio:
-        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
       init_data:
         condition: service_completed_successfully
     command: >
       sh -c "
-      until python -c '
+      for i in $(seq 1 30); do
+        python -c '
       import requests
       requests.get(\"http://mlflow:5000\").raise_for_status()
-      '; do
+      ' && break
+
           echo 'Waiting for MLflow...'
           sleep 2
         done &&
-      python train.py
-      "
+        
+        python train.py
+        "
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       ENVIRONMENT: Production
@@ -171,10 +166,12 @@ services:
       bash -c "
       pip install pytest requests &&
       
-      until python -c '
+      for i in $(seq 1 30); do
+        python -c '
       import requests
       requests.get(\"http://app:8000\").raise_for_status()
-      '; do
+      ' && break
+
           echo 'Waiting for app...'
           sleep 2
         done &&
