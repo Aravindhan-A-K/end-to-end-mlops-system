@@ -25,6 +25,12 @@ services:
       - "9000:9000"
       - "9001:9001"
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     volumes:
       - minio_data:/data
   create_bucket:
@@ -32,7 +38,7 @@ services:
     container_name: create_bucket
     depends_on:
       minio:
-        condition: service_started
+        condition: service_healthy
     entrypoint: /bin/sh
     command: -c "
       sleep 10;
@@ -45,7 +51,7 @@ services:
     container_name: init_data
     depends_on:
       minio:
-        condition: service_started
+        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
     volumes:
@@ -66,7 +72,7 @@ services:
       postgres: 
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
     ports:
@@ -119,7 +125,7 @@ services:
       mlflow:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       create_bucket:
         condition: service_completed_successfully
       init_data:
