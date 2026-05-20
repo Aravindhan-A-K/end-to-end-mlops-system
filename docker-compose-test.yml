@@ -1,21 +1,23 @@
 services:
   postgres:
     image: postgres:13
+    container_name: postgres
     environment:
       POSTGRES_USER: mlflow
       POSTGRES_PASSWORD: mlflow
       POSTGRES_DB: postgres_data
+      POSTGRES_INITDB_ARGS: "-c max_connections=50 -c shared_buffers=128MB -c wal_level=minimal -c max_wal_senders=0"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mlflow -d postgres_data"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    command: postgres -c max_connections=200 -c shared_buffers=256MB
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 180s
+
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -28,31 +30,29 @@ services:
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "sh", "-c", "mc alias set local http://localhost:9000 minioadmin minioadmin && mc ready local"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     volumes:
       - minio_data:/data
+
   create_bucket:
     image: minio/mc:latest
     container_name: create_bucket
-
     depends_on:
       minio:
         condition: service_healthy
-
     entrypoint: /bin/sh
-
     command: >
       -c '
       until mc alias set local http://minio:9000 minioadmin minioadmin; do
         echo "Waiting for MinIO..."
         sleep 2
       done
-
       mc mb local/mlops-artifacts-aravindh-ml --ignore-existing
       '
+
   init_data:
     build: ./init_data
     container_name: init_data
@@ -66,8 +66,9 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: >
       sh -c "
-      python -c 'import boto3; s3=boto3.client(\"s3\", endpoint_url=\"http://minio:9000\", aws_access_key_id=\"minioadmin\", aws_secret_access_key=\"minioadmin\"); s3.upload_file(\"/data/hour.csv\", \"mlops-artifacts-aravindh-ml\", \"Data/hour.csv\")'
+      python -c 'import boto3; s3=boto3.client(\"s3\", endpoint_url=\"http://minio:9000\", aws_access_key_id=\"minioadmin\", aws_secret_access_key=\"minioadmin\"); s3.upload_file(\"/data/hour.csv\", \"mlops-artifacts-aravindh-ml\", \"data/hour.csv\")'
       "
+
   mlflow:
     build: ./mlflow
     container_name: mlflow
@@ -96,7 +97,33 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 120s
+
+  training:
+    build: ./training
+    container_name: train_pipeline
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      init_data:
+        condition: service_completed_successfully
+    command: >
+      sh -c "
+      for i in $(seq 1 60); do
+        python -c 'import requests; requests.get(\"http://mlflow:5000\").raise_for_status()' && break
+        echo 'Waiting for MLflow...' && sleep 2
+      done &&
+      python train.py
+      "
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ENVIRONMENT: Production
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      DATA_PATH: s3://mlops-artifacts-aravindh-ml/data/hour.csv
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      S3_ENDPOINT_URL: http://minio:9000
+
   app:
     build: .
     container_name: app
@@ -118,39 +145,8 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
-      start_period: 90s
-    
-  training:
-    build: ./training
-    container_name: train_pipeline
-    depends_on:
-      mlflow:
-        condition: service_healthy
-      create_bucket:
-        condition: service_completed_successfully
-      init_data:
-        condition: service_completed_successfully
-    command: >
-      sh -c "
-      for i in $(seq 1 30); do
-        python -c '
-      import requests; requests.get(\"http://mlflow:5000\").raise_for_status()
-      ' && break
+      start_period: 120s
 
-          echo 'Waiting for MLflow...'
-          sleep 2
-        done &&
-        
-        python train.py
-        "
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      ENVIRONMENT: Production
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      DATA_PATH: s3://mlops-artifacts-aravindh-ml/data/hour.csv
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      S3_ENDPOINT_URL: http://minio:9000
   test:
     image: python:3.12-slim
     container_name: tests
@@ -165,24 +161,13 @@ services:
     command: >
       bash -c "
       pip install pytest requests &&
-      
-      for i in $(seq 1 30); do
-        python -c '
-      import requests; requests.get(\"http://app:8000\").raise_for_status()
-      ' && break
-
-          echo 'Waiting for app...'
-          sleep 2
-        done &&
-        
-        pytest /tests/test_integration.py -v
-        "
-  
+      for i in $(seq 1 60); do
+        python -c 'import requests; requests.get(\"http://app:8000\").raise_for_status()' && break
+        echo 'Waiting for app...' && sleep 2
+      done &&
+      pytest /tests/test_integration.py -v
+      "
 
 volumes:
   postgres_data:
   minio_data:
-  
-
-
-  
