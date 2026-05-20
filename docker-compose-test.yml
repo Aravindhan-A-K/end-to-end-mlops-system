@@ -27,6 +27,12 @@ services:
       - "9000:9000"
       - "9001:9001"
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "mc alias set local http://localhost:9000 minioadmin minioadmin && mc ready local"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     volumes:
       - minio_data:/data
   create_bucket:
