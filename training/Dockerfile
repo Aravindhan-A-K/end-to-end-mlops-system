@@ -5,4 +5,4 @@ RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 FROM python:3.12-slim
 WORKDIR /training
 COPY --from=builder /install /usr/local
-COPY train.py .
+COPY training/train.py .
