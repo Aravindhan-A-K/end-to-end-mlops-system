@@ -18,7 +18,7 @@ jobs:
         service:
           - name: app
             repo: mlops-app
-            dockerfile: .Dockerfile
+            dockerfile: /Dockerfile
 
           - name: mlflow
             repo: mlops-mlflow
